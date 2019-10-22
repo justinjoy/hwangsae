@@ -1,4 +1,6 @@
-/**
+/** 
+ *  tests/test-relay
+ *
  *  Copyright 2019 SK Telecom Co., Ltd.
  *    Author: Jeongseok Kim <jeongseok.kim@sk.com>
  *
@@ -16,41 +18,31 @@
  *
  */
 
-#include "config.h"
-
-#include "agent.h"
-#include <hwangsae/relay.h>
-
-struct _HwangsaeAgent
-{
-  GApplication parent;
-
-  HwangsaeRelay *relay;
-};
-
-/* *INDENT-OFF* */
-G_DEFINE_TYPE (HwangsaeAgent, hwangsae_agent, G_TYPE_APPLICATION)
-/* *INDENT-ON* */
-
+#include "hwangsae/hwangsae.h"
 static void
-hwangsae_agent_class_init (HwangsaeAgentClass * klass)
+test_hwangsae_relay_instance (void)
 {
-}
+  guint sink_port, source_port;
+  g_autoptr (HwangsaeRelay) relay = hwangsae_relay_new ();
 
-static void
-hwangsae_agent_init (HwangsaeAgent * self)
-{
-  self->relay = hwangsae_relay_new ();
+  g_assert_nonnull (relay);
+
+  g_object_get (relay, "sink-port", &sink_port, "source-port", &source_port,
+      NULL);
+
+  g_assert_cmpint (sink_port, ==, 8888);
+  g_assert_cmpint (source_port, ==, 9999);
 }
 
 int
 main (int argc, char *argv[])
 {
-  g_autoptr (GApplication) app = NULL;
+  g_test_init (&argc, &argv, NULL);
 
-  app = G_APPLICATION (g_object_new (HWANGSAE_TYPE_AGENT,
-          "application-id", "org.hwangsaeul.Hwangsae1",
-          "flags", G_APPLICATION_IS_SERVICE, NULL));
+  /* Don't treat warnings as fatal, which is GTest default. */
+  g_log_set_always_fatal (G_LOG_FATAL_MASK | G_LOG_LEVEL_CRITICAL);
 
-  return g_application_run (app, argc, argv);
+  g_test_add_func ("/hwangsae/relay-instance", test_hwangsae_relay_instance);
+
+  return g_test_run ();
 }

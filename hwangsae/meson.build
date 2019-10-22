@@ -5,11 +5,13 @@ configure_file(output: 'config.h', configuration: cdata)
 source_h = [
   'hwangsae.h',
   'recorder.h',
+  'relay.h',
   'types.h',
 ]
 
 source_c = [
   'recorder.c',
+  'relay.c',
 ]
 
 gsettings_schemas = [
@@ -41,7 +43,7 @@ libhwangsae = library(
   version: libversion,
   soversion: soversion,
   include_directories: hwangsae_incs,
-  dependencies: [ gstreamer_dep, gio_dep ],
+  dependencies: [ gstreamer_dep, gio_dep, libsrt_dep ],
   c_args: hwangsae_c_args,
   link_args: common_ldflags,
   install: true

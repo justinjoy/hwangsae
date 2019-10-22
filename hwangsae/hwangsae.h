@@ -21,6 +21,10 @@
 
 #define __HWANGSAE_INSIDE__
 
+#include <hwangsae/types.h>
+#include <hwangsae/enumtypes.h>
+
 #include <hwangsae/recorder.h>
+#include <hwangsae/relay.h>
 
 #endif // __HWANGSAE_H__

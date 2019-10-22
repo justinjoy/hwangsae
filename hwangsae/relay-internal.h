@@ -16,36 +16,16 @@
  *
  */
 
-#ifndef __HWANGSAE_TYPES_H__
-#define __HWANGSAE_TYPES_H__
+#ifndef __HWNAGSAE_RELAY_INTERNAL_H__
+#define __HWNAGSAE_RELAY_INTERNAL_H__
 
-#ifndef _HWANGSAE_EXTERN
-#define _HWANGSAE_EXTERN        extern
-#endif
+#define RELAYINFO_JSON_FORMAT \
+"{ \
+   \"stream-id\": \"%s\", \
+   \"mode\": %" G_GINT32_FORMAT ", \
+   \"uri\": \"%s\", \
+   \"port\": %" G_GUINT32_FORMAT ", \
+   \"direction\": %" G_GINT32_FORMAT " \
+}"
 
-#define HWANGSAE_API_EXPORT     _HWANGSAE_EXTERN
-
-typedef enum {
-  HWANGSAE_RETURN_FAIL = -1,
-  HWANGSAE_RETURN_OK,
-} HwangsaeReturn;
-
-typedef enum {
-  HWANGSAE_CONTAINER_MP4,
-  HWANGSAE_CONTAINER_TS,
-} HwangsaeContainer;
-
-typedef enum {
-  HWANGSAE_DIRECTION_NONE,
-  HWANGSAE_DIRECTION_SINK,
-  HWANGSAE_DIRECTION_SOURCE,
-} HwangsaeDirection;
-
-typedef enum {
-  HWANGSAE_SRT_MODE_UNKNOWN = 0,
-  HWANGSAE_SRT_MODE_CALLER,
-  HWANGSAE_SRT_MODE_LISTENER,
-  HWANGSAE_SRT_MODE_RENDEZVOUS,
-} HwangsaeSRTMode;
-
-#endif // __HWANGSAE_TYPES_H__
+#endif // __HWNAGSAE_RELAY_INTERNAL_H__
