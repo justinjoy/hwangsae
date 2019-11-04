@@ -248,7 +248,6 @@ hwangsae_relay_map_remove (HwangsaeRelayMap * self, const gchar * stream_id)
   HwangsaeHostInfo *info = NULL;
   GSequence *src_ids = NULL;
   GSequenceIter *src_iter = NULL;
-  gchar *sink_stream_id = NULL;
 
   g_return_if_fail (self != NULL);
   g_return_if_fail (stream_id != NULL && *stream_id != '\0');
@@ -265,7 +264,8 @@ hwangsae_relay_map_remove (HwangsaeRelayMap * self, const gchar * stream_id)
     return;
   }
 
-  src_ids = g_hash_table_lookup (self->sink_src_id_map, sink_stream_id);
+  g_debug ("check source lists associated with sink (%s)", stream_id);
+  src_ids = g_hash_table_lookup (self->sink_src_id_map, stream_id);
   src_iter = g_sequence_get_begin_iter (src_ids);
 
   while (!g_sequence_iter_is_end (src_iter)) {
@@ -279,8 +279,13 @@ hwangsae_relay_map_remove (HwangsaeRelayMap * self, const gchar * stream_id)
     g_hash_table_remove (self->id_map, src_srt_info->stream_id);
 
     g_sequence_remove (src_iter);
+
     src_iter = next;
   }
+
+  g_hash_table_remove (self->sink_src_id_map, stream_id);
+  g_hash_table_remove (self->sock_map, GINT_TO_POINTER (info->sock));
+  g_hash_table_remove (self->id_map, stream_id);
 }
 
 guint

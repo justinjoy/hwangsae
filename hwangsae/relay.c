@@ -326,9 +326,9 @@ _sink_listen_cb (HwangsaeRelay * self, SRTSOCKET sock, gint hs_version,
   }
 
   g_debug ("accepting a sink connection from [%s:%" G_GUINT16_FORMAT
-      "], stream-id: %s", addr_str,
+      "], stream-id: %s (sock: 0x%x)", addr_str,
       g_inet_socket_address_get_port (G_INET_SOCKET_ADDRESS (addr)),
-      valid_stream_id);
+      valid_stream_id, sock);
 
   if (srt_epoll_add_usock (self->sink_poll_id, sock, &(gint) {
           SRT_EPOLL_ERR | SRT_EPOLL_IN}
@@ -336,6 +336,9 @@ _sink_listen_cb (HwangsaeRelay * self, SRTSOCKET sock, gint hs_version,
     g_error ("%s", srt_getlasterror_str ());
     goto reject;
   }
+
+  /* TODO: need to set passphrase from external key management system */
+  srt_setsockflag (sock, SRTO_PASSPHRASE, "123456789!", 10);
 
   return 0;
 
@@ -403,6 +406,7 @@ reject:
 static void
 _relay_to (HwangsaeRelay * self, gchar * stream_id, guint8 * payload, gint len)
 {
+  g_debug ("drop payload (len: %d)", len);
 #if 0
   g_autoptr (GMutexLocker) locker = NULL;
   gint source_poll_id;
@@ -484,6 +488,7 @@ _invalidate_sink_func (gpointer data, gpointer user_data)
   HwangsaeHostInfo *info =
       hwangsae_relay_map_get_info (self->map, sink_stream_id);
 
+  g_debug ("invalidating (%s)", sink_stream_id);
   switch (srt_getsockstate (info->sock)) {
     case SRTS_BROKEN:
     case SRTS_NONEXIST:
@@ -507,7 +512,11 @@ _relay_running_cb (gpointer data)
   event_len = hwangsae_relay_map_sink_count (self->map);
   sink_events = g_new0 (SRT_EPOLL_EVENT, event_len);
 
-  if (srt_epoll_uwait (self->sink_poll_id, sink_events, event_len, 0) < 0) {
+  if (event_len == 0) {
+    return G_SOURCE_CONTINUE;
+  }
+
+  if (srt_epoll_uwait (self->sink_poll_id, sink_events, event_len, 100) <= 0) {
     /* SRT has two authorization steps; by listener callback, then by passphrase
      *
      * User only can decide whether stream-id is validated.
@@ -537,10 +546,10 @@ _relay_running_cb (gpointer data)
       case SRTS_BROKEN:
       case SRTS_NONEXIST:
       case SRTS_CLOSED:
-        g_warning ("Invalid SRT sink socket");
+        g_warning ("Invalid SRT sink socket (0x%x)", sink_events[i].fd);
 
         srt_epoll_remove_usock (self->sink_poll_id, sink_events[i].fd);
-        hwangsae_relay_map_remove (self->map, info->stream_id);
+        srt_close (sink_events[i].fd);
 
         goto out;
 
@@ -552,7 +561,7 @@ _relay_running_cb (gpointer data)
         goto out;
     }
 
-    if (!srt_getsockflag (sink_events[i].fd, SRTO_PAYLOADSIZE, &payload_size,
+    if (srt_getsockflag (sink_events[i].fd, SRTO_PAYLOADSIZE, &payload_size,
             &option_len)) {
       g_error ("%s", srt_getlasterror_str ());
       goto out;
@@ -590,7 +599,7 @@ _relay_main (gpointer data)
 
   self->sink_poll_id = srt_epoll_create ();
   /* sink listener */
-  self->sink_listen_sock = _srt_open_listen_sock (self->sink_port, 1);
+  self->sink_listen_sock = _srt_open_listen_sock (self->sink_port, 2);
   srt_listen_callback (self->sink_listen_sock,
       (srt_listen_callback_fn *) _sink_listen_cb, self);
 
