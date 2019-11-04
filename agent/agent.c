@@ -52,5 +52,6 @@ main (int argc, char *argv[])
           "application-id", "org.hwangsaeul.Hwangsae1",
           "flags", G_APPLICATION_IS_SERVICE, NULL));
 
+  g_application_hold (app);
   return g_application_run (app, argc, argv);
 }

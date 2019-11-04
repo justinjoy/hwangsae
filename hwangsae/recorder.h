@@ -25,7 +25,7 @@
 
 #include <glib-object.h>
 
-#include "types.h"
+#include <hwangsae/types.h>
 
 G_BEGIN_DECLS
 

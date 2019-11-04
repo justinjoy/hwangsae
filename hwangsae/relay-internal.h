@@ -16,8 +16,8 @@
  *
  */
 
-#ifndef __HWNAGSAE_RELAY_INTERNAL_H__
-#define __HWNAGSAE_RELAY_INTERNAL_H__
+#ifndef __HWANGSAE_RELAY_INTERNAL_H__
+#define __HWANGSAE_RELAY_INTERNAL_H__
 
 #define RELAYINFO_JSON_FORMAT \
 "{ \
@@ -28,4 +28,4 @@
    \"direction\": %" G_GINT32_FORMAT " \
 }"
 
-#endif // __HWNAGSAE_RELAY_INTERNAL_H__
+#endif // __HWANGSAE_RELAY_INTERNAL_H__

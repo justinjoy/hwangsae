@@ -3,14 +3,18 @@ hwangsae_install_header_subdir = join_paths(hwangsae_api_name, 'hwangsae')
 configure_file(output: 'config.h', configuration: cdata)
 
 source_h = [
+  'host-info.h',
   'hwangsae.h',
   'recorder.h',
+  'relay-map.h',
   'relay.h',
   'types.h',
 ]
 
 source_c = [
   'recorder.c',
+  'host-info.c',
+  'relay-map.c',
   'relay.c',
 ]
 

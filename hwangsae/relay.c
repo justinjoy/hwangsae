@@ -17,74 +17,10 @@
  */
 
 #include "relay.h"
-
-#include <gio/gio.h>
-#include <srt.h>
-
+#include "relay-map.h"
 #include "relay-internal.h"
 
-typedef struct _SRTInfo
-{
-  gint refcount;
-
-  GSocketAddress *sockaddr;
-  gchar *stream_id;
-  HwangsaeSRTMode mode;
-  HwangsaeDirection direction;
-  gint handshake_version;
-
-  SRTSOCKET sock;
-
-} SRTInfo;
-
-static SRTInfo *
-srt_info_new (GSocketAddress * sockaddr, const gchar * stream_id,
-    SRTSOCKET sock, HwangsaeSRTMode mode, HwangsaeDirection direction,
-    gint handshake_version)
-{
-  SRTInfo *info = g_new (SRTInfo, 1);
-
-  info->refcount = 1;
-  info->sockaddr = g_object_ref (sockaddr);
-  info->stream_id = g_strdup (stream_id);
-  info->sock = sock;
-  info->mode = mode;
-  info->direction = direction;
-  info->handshake_version = handshake_version;
-
-  return info;
-}
-
-static SRTInfo *
-srt_info_ref (SRTInfo * info)
-{
-  g_return_val_if_fail (info != NULL, NULL);
-  g_return_val_if_fail (info->stream_id != NULL, NULL);
-  g_return_val_if_fail (info->refcount >= 1, NULL);
-
-  g_atomic_int_inc (&info->refcount);
-
-  return info;
-}
-
-static void
-srt_info_unref (SRTInfo * info)
-{
-  if (g_atomic_int_dec_and_test (&info->refcount)) {
-
-    g_clear_object (&info->sockaddr);
-
-    if (info->sock != SRT_INVALID_SOCK) {
-      srt_close (info->sock);
-    }
-    g_free (info->stream_id);
-    g_free (info);
-  }
-}
-
-/* *INDENT-OFF* */
-G_DEFINE_AUTOPTR_CLEANUP_FUNC (SRTInfo, srt_info_unref)
-/* *INDENT-ON* */
+#include <gio/gio.h>
 
 struct _HwangsaeRelay
 {
@@ -106,12 +42,7 @@ struct _HwangsaeRelay
 
   gint sink_poll_id;
 
-  GHashTable *sink_map;         /* (element-type utf8 SRTInfo*) */
-  GHashTable *source_map;       /* (element-type SRTSOCKET SRTInfo*) */
-
-  GHashTable *relay_map;        /* (element-type utf8 gint) */
-  GHashTable *relay_id_map;     /* (element-type utf8 GLib.Sequence(utf8)) */
-  GHashTable *reverse_map;      /* (element-type utf8 utf8) */
+  HwangsaeRelayMap *map;
 };
 
 static guint hwangsae_relay_init_refcnt = 0;
@@ -140,7 +71,6 @@ static struct srt_constant_params srt_params[] = {
   {"SRTO_LINGER", SRTO_LINGER, 0},
   {"SRTO_TSBPMODE", SRTO_TSBPDMODE, 1}, /* Timestamp-based Packet Delivery mode must be enabled */
   {"SRTO_RENDEZVOUS", SRTO_RENDEZVOUS, 0},      /* 0: not for rendezvous */
-  {"SRTO_STREAMID", SRTO_STREAMID, 1},  /* 1: enable stream id */
   {NULL, -1, -1},
 };
 
@@ -163,9 +93,7 @@ hwangsae_relay_dispose (GObject * object)
 
   g_clear_object (&self->settings);
 
-  g_clear_pointer (&self->sink_map, g_hash_table_destroy);
-  g_clear_pointer (&self->source_map, g_hash_table_destroy);
-  g_clear_pointer (&self->relay_map, g_hash_table_destroy);
+  g_clear_pointer (&self->map, hwangsae_relay_map_unref);
 
   G_OBJECT_CLASS (hwangsae_relay_parent_class)->dispose (object);
 }
@@ -298,7 +226,8 @@ failed:
   return SRT_INVALID_SOCK;
 }
 
-static SRTInfo *
+#if  0
+static HwangsaeHostInfo *
 _srt_listen_cb_internal (HwangsaeRelay * self, SRTSOCKET sock, gint hs_version,
     const struct sockaddr *peeraddr, const gchar * stream_id,
     HwangsaeSRTMode mode, HwangsaeDirection direction)
@@ -310,7 +239,7 @@ _srt_listen_cb_internal (HwangsaeRelay * self, SRTSOCKET sock, gint hs_version,
   GInetAddress *inet_addr;
   gint sockflag = direction == HWANGSAE_DIRECTION_SOURCE ? 1 : 0;
 
-  g_autoptr (SRTInfo) info = NULL;
+  g_autoptr (HwangsaeHostInfo) info = NULL;
 
   addr =
       g_socket_address_new_from_native ((gpointer) peeraddr,
@@ -365,19 +294,41 @@ failed:
   return NULL;                  /* error */
 
 }
+#endif
 
 static gint
 _sink_listen_cb (HwangsaeRelay * self, SRTSOCKET sock, gint hs_version,
     const struct sockaddr *peeraddr, const gchar * stream_id)
 {
-  g_autoptr (SRTInfo) info = NULL;
+  g_autoptr (GSocketAddress) addr = NULL;
+  g_autofree gchar *addr_str = NULL;
+  g_autofree gchar *valid_stream_id = NULL;
+  GInetAddress *inet_addr;
+  HwangsaeHostInfo *info = NULL;
 
-  info = _srt_listen_cb_internal (self, sock, hs_version, peeraddr, stream_id,
-      HWANGSAE_SRT_MODE_CALLER, HWANGSAE_DIRECTION_SINK);
+  addr =
+      g_socket_address_new_from_native ((gpointer) peeraddr,
+      sizeof (struct sockaddr));
+  inet_addr = g_inet_socket_address_get_address (G_INET_SOCKET_ADDRESS (addr));
+  addr_str = g_inet_address_to_string (inet_addr);
+
+  valid_stream_id =
+      stream_id != NULL
+      && *stream_id != '\0' ? g_strdup (stream_id) : g_strdup ("default");
+
+  info =
+      hwangsae_relay_map_add_sink (self->map, addr, valid_stream_id, sock,
+      hs_version, HWANGSAE_SRT_MODE_CALLER);
 
   if (info == NULL) {
+    g_debug ("fail to add a sink connection from %s", addr_str);
     goto reject;
   }
+
+  g_debug ("accepting a sink connection from [%s:%" G_GUINT16_FORMAT
+      "], stream-id: %s", addr_str,
+      g_inet_socket_address_get_port (G_INET_SOCKET_ADDRESS (addr)),
+      valid_stream_id);
 
   if (srt_epoll_add_usock (self->sink_poll_id, sock, &(gint) {
           SRT_EPOLL_ERR | SRT_EPOLL_IN}
@@ -386,20 +337,16 @@ _sink_listen_cb (HwangsaeRelay * self, SRTSOCKET sock, gint hs_version,
     goto reject;
   }
 
-  /* TODO: support multiple sink connections */
-  srt_close (self->sink_listen_sock);
-  self->sink_listen_sock = SRT_INVALID_SOCK;
-
-  g_hash_table_insert (self->relay_map, info->stream_id,
-      GINT_TO_POINTER (srt_epoll_create ()));
-
-  g_hash_table_insert (self->relay_id_map, info->stream_id,
-      g_sequence_new (g_free));
-
   return 0;
 
 reject:
+
+  if (info) {
+    hwangsae_relay_map_remove (self->map, info->stream_id);
+  }
+
   srt_close (sock);
+
   return -1;
 }
 
@@ -407,7 +354,8 @@ static gint
 _source_listen_cb (HwangsaeRelay * self, SRTSOCKET sock, gint hs_version,
     const struct sockaddr *peeraddr, const gchar * stream_id)
 {
-  SRTInfo *info = NULL;
+#if 0
+  HwangsaeHotInfo *info = NULL;
   g_autoptr (GMutexLocker) locker = NULL;
   gint source_poll_id;
   gchar *sink_stream_id;
@@ -448,19 +396,14 @@ _source_listen_cb (HwangsaeRelay * self, SRTSOCKET sock, gint hs_version,
   return 0;
 
 reject:
+#endif
   return -1;
-}
-
-static gboolean
-_find_by_srtsock (gpointer key, gpointer value, gpointer user_data)
-{
-  SRTInfo *info = value;
-  return GPOINTER_TO_INT (user_data) == info->sock;
 }
 
 static void
 _relay_to (HwangsaeRelay * self, gchar * stream_id, guint8 * payload, gint len)
 {
+#if 0
   g_autoptr (GMutexLocker) locker = NULL;
   gint source_poll_id;
   SRT_EPOLL_EVENT *source_events;
@@ -530,44 +473,65 @@ out:
   if (source_events != NULL) {
     g_free (source_events);
   }
+#endif
+}
+
+static void
+_invalidate_sink_func (gpointer data, gpointer user_data)
+{
+  HwangsaeRelay *self = user_data;
+  g_autofree gchar *sink_stream_id = g_strdup (data);
+  HwangsaeHostInfo *info =
+      hwangsae_relay_map_get_info (self->map, sink_stream_id);
+
+  switch (srt_getsockstate (info->sock)) {
+    case SRTS_BROKEN:
+    case SRTS_NONEXIST:
+    case SRTS_CLOSED:
+      g_debug ("invalidate sink (stream-id: %s)", sink_stream_id);
+      srt_epoll_remove_usock (self->sink_poll_id, info->sock);
+      hwangsae_relay_map_remove (self->map, sink_stream_id);
+      break;
+    default:
+      break;
+  }
 }
 
 static gboolean
 _relay_running_cb (gpointer data)
 {
   HwangsaeRelay *self = data;
-  g_autoptr (GMutexLocker) locker = NULL;
   SRT_EPOLL_EVENT *sink_events;
   gint i, event_len;
 
-  locker = g_mutex_locker_new (&self->lock);
-
-  /* Read from sink first */
-  event_len = g_hash_table_size (self->sink_map);
-
-  g_mutex_locker_free (locker);
-
+  event_len = hwangsae_relay_map_sink_count (self->map);
   sink_events = g_new0 (SRT_EPOLL_EVENT, event_len);
 
   if (srt_epoll_uwait (self->sink_poll_id, sink_events, event_len, 0) < 0) {
-    g_error ("%s", srt_getlasterror_str ());
+    /* SRT has two authorization steps; by listener callback, then by passphrase
+     *
+     * User only can decide whether stream-id is validated.
+     * If passphrase is not matches, SRT will reject connection request.
+     * However, the problem is that we don't know whether the socket which is accepted by
+     * listener callback is passed SRT's authentication step or not.
+     * The invalidated socket will be detected by epoll_wait as error.
+     */
+
+    g_autoptr (GList) sinks = hwangsae_relay_map_get_sink_ids (self->map);
+    g_list_foreach (sinks, _invalidate_sink_func, self);
     goto out;
   }
 
   for (i = 0; i < event_len; i++) {
+    HwangsaeHostInfo *info = NULL;
 
-    SRTInfo *info = NULL;
     guint8 *payload = NULL;
     gint payload_size, option_len;
     gint len;
 
-    locker = g_mutex_locker_new (&self->lock);
+    info = hwangsae_relay_map_get_info_by_sock (self->map, sink_events[i].fd);
 
-    /* FIXME: This way is O(n*n) complexity */
-    info = g_hash_table_find (self->sink_map, _find_by_srtsock,
-        GINT_TO_POINTER (sink_events[i].fd));
-
-    g_mutex_locker_free (&self->lock);
+    g_debug ("extract sink stream-id (%s) from sock", info->stream_id);
 
     switch (srt_getsockstate (sink_events[i].fd)) {
       case SRTS_BROKEN:
@@ -576,21 +540,7 @@ _relay_running_cb (gpointer data)
         g_warning ("Invalid SRT sink socket");
 
         srt_epoll_remove_usock (self->sink_poll_id, sink_events[i].fd);
-        srt_close (sink_events[i].fd);
-
-        if (info != NULL) {
-          locker = g_mutex_locker_new (&self->lock);
-          g_hash_table_remove (self->sink_map, info->stream_id);
-          g_mutex_locker_free (&self->lock);
-        }
-
-        /* Since we support only one edge connection,
-         * listen_sock should be re-initialized when lost a client */
-        self->sink_listen_sock = _srt_open_listen_sock (self->sink_port, 1);
-        srt_listen_callback (self->sink_listen_sock,
-            (srt_listen_callback_fn *) _sink_listen_cb, self);
-
-        /* Even if sink stream is disconnected, source connections are still alive */
+        hwangsae_relay_map_remove (self->map, info->stream_id);
 
         goto out;
 
@@ -735,21 +685,7 @@ hwangsae_relay_init (HwangsaeRelay * self)
   g_settings_bind (self->settings, "source-port", self, "source-port",
       G_SETTINGS_BIND_DEFAULT);
 
-  self->sink_map =
-      g_hash_table_new_full (g_str_hash, g_str_equal, g_free,
-      (GDestroyNotify) srt_info_unref);
-  self->source_map =
-      g_hash_table_new_full (g_int_hash, g_int_equal, g_free,
-      (GDestroyNotify) srt_info_unref);
-  self->relay_map =
-      g_hash_table_new_full (g_str_hash, g_str_equal, g_free,
-      (GDestroyNotify) srt_epoll_release);
-  self->relay_map =
-      g_hash_table_new_full (g_str_hash, g_str_equal, g_free,
-      (GDestroyNotify) g_sequence_free);
-  self->reverse_map =
-      g_hash_table_new_full (g_str_hash, g_str_equal, g_free, g_free);
-
+  self->map = hwangsae_relay_map_new ();
 }
 
 HwangsaeRelay *
