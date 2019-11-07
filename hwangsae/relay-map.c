@@ -108,8 +108,7 @@ hwangsae_relay_map_add_sink (HwangsaeRelayMap * self,
     return NULL;
   }
 
-  g_hash_table_insert (self->id_map, g_strdup (stream_id),
-      hwangsae_host_info_ref (info));
+  g_hash_table_insert (self->id_map, g_strdup (stream_id), info);
   g_hash_table_insert (self->sock_map, GINT_TO_POINTER (sink_sock),
       hwangsae_host_info_ref (info));
   g_hash_table_insert (self->sink_src_id_map, g_strdup (stream_id),
@@ -270,7 +269,9 @@ hwangsae_relay_map_remove (HwangsaeRelayMap * self, const gchar * stream_id)
 
   while (!g_sequence_iter_is_end (src_iter)) {
     GSequenceIter *next = g_sequence_iter_next (src_iter);
-    gchar *src_stream_id = g_sequence_get (src_iter);
+
+    HwangsaeHostInfo *src_info = g_sequence_get (src_iter);
+    gchar *src_stream_id = src_info->stream_id;
     HwangsaeHostInfo *src_srt_info =
         g_hash_table_lookup (self->id_map, src_stream_id);
 

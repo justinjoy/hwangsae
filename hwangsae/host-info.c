@@ -46,6 +46,7 @@ hwangsae_host_info_new (GSocketAddress * sockaddr, const gchar * stream_id,
     info->src_poll_id = SRT_ERROR;
   }
 
+  g_debug ("host info created (ref: %d)", info->refcount);
   return info;
 }
 
@@ -57,6 +58,7 @@ hwangsae_host_info_ref (HwangsaeHostInfo * info)
   g_return_val_if_fail (info->refcount >= 1, NULL);
 
   g_atomic_int_inc (&info->refcount);
+  g_debug ("host info ref (ref: %d)", info->refcount);
 
   return info;
 }
@@ -68,10 +70,14 @@ hwangsae_host_info_unref (HwangsaeHostInfo * info)
   g_return_if_fail (info->stream_id != NULL);
   g_return_if_fail (info->refcount >= 1);
 
+  g_debug ("unref host info (refcount: %d)", info->refcount);
   if (g_atomic_int_dec_and_test (&info->refcount)) {
+    g_debug ("freeing host info (stream-id: %s, sock: 0x%x)", info->stream_id,
+        info->sock);
     g_clear_object (&info->sockaddr);
 
     if (info->sock != SRT_INVALID_SOCK) {
+      g_debug ("close srt socket");
       srt_close (info->sock);
     }
     if (info->direction == HWANGSAE_DIRECTION_SINK

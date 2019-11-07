@@ -1,5 +1,6 @@
 tools = [
-  'recorder'
+  'recorder',
+  'relay'
 ]
 
 tools_c_args = [
@@ -15,7 +16,7 @@ foreach tool: tools
     src_file,
     install: true,
     include_directories: hwangsae_incs,
-    dependencies : [ libhwangsae_dep, gstreamer_dep, gio_dep ],
+    dependencies : [ libhwangsae_dep, gstreamer_dep, gio_dep, libsrt_dep ],
     c_args: tools_c_args,
   )
   

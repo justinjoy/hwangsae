@@ -16,26 +16,22 @@
  *
  */
 
-#ifndef __HWANGSAE_RELAY_H__
-#define __HWANGSAE_RELAY_H__
+#ifndef __HWANGSAE_RELAY_CONNECTION_H__
+#define __HWANGSAE_RELAY_CONNECTION_H__
 
-#if !defined(__HWANGSAE_INSIDE__) && !defined(HWANGSAE_COMPILATION)
-#error "Only <hwangsae/hwangsae.h> can be included directly."
-#endif
-
-#include <hwangsae/types.h>
-
+#include <srt.h>
 #include <glib-object.h>
 
 G_BEGIN_DECLS
 
-#define HWANGSAE_TYPE_RELAY     (hwangsae_relay_get_type ())
-G_DECLARE_FINAL_TYPE            (HwangsaeRelay, hwangsae_relay, HWANGSAE, RELAY, GObject)
+typedef gboolean        (*HwangsaeRelayFunc)            (SRTSOCKET sink_sock, gchar *stream_id,
+                                                         guint8 *payload, gint len, gpointer user_data);
 
-
-HwangsaeRelay          *hwangsae_relay_new              (void);
+guint                   hwangsae_relay_connection_add_watch
+                                                        (SRTSOCKET sink_sock,
+                                                         HwangsaeRelayFunc callback,
+                                                         gpointer user_data); 
 
 G_END_DECLS
 
-#endif // __HWANGSAE_RELAY_H__
-
+#endif // __HWANGSAE_RELAY_CONNECTION_H__
